@@ -1,0 +1,82 @@
+name: Bloodborne Windows CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Native Windows (MSYS2 UCRT64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup MSYS2 UCRT64 Toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-fmt
+            mingw-w64-ucrt-x86_64-xxhash
+            mingw-w64-ucrt-x86_64-zydis
+            mingw-w64-ucrt-x86_64-miniz
+
+      - name: Build Native Windows Executables
+        shell: pwsh
+        run: |
+          $env:MINGW_PREFIX = "C:\msys64\ucrt64"
+          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+          .\build.ps1
+
+      - name: Verify Built Binaries
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "out\bb-probe.exe")) {
+            Write-Error "CRITICAL: out/bb-probe.exe was not generated!"
+            exit 1
+          }
+          if (-not (Test-Path "out\bb-gpu-capabilities.exe")) {
+            Write-Error "CRITICAL: out/bb-gpu-capabilities.exe was not generated!"
+            exit 1
+          }
+          Write-Host "Build verification passed: all core Windows executables present." -ForegroundColor Green
+
+      - name: Package Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloodborne-windows-nightly
+          path: |
+            out/bb-probe.exe
+            out/bb-gpu-capabilities.exe
+            run.ps1
+            launcher.py
+            launcher_i18n.py
+            bbport.ini
+            Launch_Bloodborne.bat
+            Launch_Launcher.bat
+          if-no-files-found: error
